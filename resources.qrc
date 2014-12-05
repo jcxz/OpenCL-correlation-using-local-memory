@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>corr_global_mem.cl</file>
+        <file>corr_local_mem.cl</file>
+    </qresource>
+</RCC>
