@@ -1,7 +1,10 @@
+#include "input.h"
+
 #include <QtOpenCL/qclcontext.h>
 #include <iostream>
 #include <iomanip>
 #include <cmath>
+#include <chrono>
 
 #define IDX(x, y, size) ((x) + (size) * (y))
 
@@ -11,14 +14,13 @@
     return false; \
   } while (0)
 
-//#define SMALL
+//#define DEBUG
 
 
 
 
 /**************************************** POMOCNE FUNCKIE ****************************************/
 
-#ifdef SMALL
 static void printArray2d(const float *p, int w, int h)
 {
   for (int j = 0; j < h; ++j)
@@ -30,7 +32,6 @@ static void printArray2d(const float *p, int w, int h)
     std::cout << std::endl;
   }
 }
-#endif
 
 
 static float cmpArray2d(const float *p1, const float *p2, const int n)
@@ -43,78 +44,6 @@ static float cmpArray2d(const float *p1, const float *p2, const int n)
   }
 
   return (sum / float(n));
-}
-
-
-/**************************************** FUNCKIE NA GENROVANIE TESTOVACICH DAT ****************************************/
-
-#ifdef SMALL
-static void genInputSmall(const float * & in, float * & out_cpp, float * & out_ocl, int & w, int & h)
-{
-  const int w_ = 10;
-  const int h_ = 10;
-  const int w_size_ = w_ + 2;   // sirka riadku
-  const int h_size_ = h_ + 2;   // sirka stlpca
-
-  static const float in_[w_size_ * h_size_] = {
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,   0, 0,
-    0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 0,
-    0, 11, 12, 13, 14, 15, 16, 17, 18, 19,  20, 0,
-    0, 21, 22, 23, 24, 25, 26, 27, 28, 29,  30, 0,
-    0, 31, 32, 33, 34, 35, 36, 37, 38, 39,  40, 0,
-    0, 41, 42, 43, 44, 45, 46, 47, 48, 49,  50, 0,
-    0, 51, 52, 53, 54, 55, 56, 57, 58, 59,  60, 0,
-    0, 61, 62, 63, 64, 65, 66, 67, 68, 69,  70, 0,
-    0, 71, 72, 73, 74, 75, 76, 77, 78, 79,  80, 0,
-    0, 81, 82, 83, 84, 85, 86, 87, 88, 89,  90, 0,
-    0, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 0,
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,   0, 0
-  };
-
-  static float out_cpp_[w_ * h_];
-  static float out_ocl_[w_ * h_];
-
-  in = in_;
-  out_cpp = out_cpp_;
-  out_ocl = out_ocl_;
-  w = w_;
-  h = h_;
-}
-#endif
-
-
-static void genInputBig(const float * & in, float * & out_cpp, float * & out_ocl, int & w, int & h, int border_size)
-{
-  const int w_ = 10000;
-  const int h_ = 10000;
-  const int w_size_ = w_ + border_size * 2;   // sirka riadku
-  const int h_size_ = h_ + border_size * 2;   // sirka stlpca
-
-  float *in_ = new float[w_size_ * h_size_];
-  float *out_cpp_ = new float[w_ * h_];
-  float *out_ocl_ = new float[w_ * h_];
-
-  for (int j = 0; j < h_size_; ++j)
-  {
-    for (int i = 0; i < w_size_; ++i)
-    {
-      int idx = i + j * w_size_;
-      if ((i < border_size) || (i > (w_size_ - 1 - border_size)) || (j < border_size) || (j > (h_size_ - 1 - border_size)))
-      {
-        in_[idx] = 0;
-      }
-      else
-      {
-        in_[idx] = (i - 1) + (j - 1) * w_;
-      }
-    }
-  }
-
-  in = in_;
-  out_cpp = out_cpp_;
-  out_ocl = out_ocl_;
-  w = w_;
-  h = h_;
 }
 
 
@@ -148,7 +77,7 @@ static bool corrReference(const float *in, const float *mask, float *out, const 
 
 /**************************************** OPENCL IMPLEMENTACIA ****************************************/
 
-static bool corrOCLGlobalMem(const float *in, const float *mask, float *out, const int w, const int h)
+static bool corrOCLGlobalMem(const float *in, const float *mask, float *out, const int w, const int h, bool /* dummy */)
 {
   std::cout << "*** OpenCL kernel that uses only global memory ***" << std::endl;
 
@@ -201,9 +130,9 @@ static bool corrOCLGlobalMem(const float *in, const float *mask, float *out, con
 }
 
 
-static bool corrOCLLocalMem(const float *in, const float *mask, float *out, const int w, const int h)
+static bool corrOCLLocalMem(const float *in, const float *mask, float *out, const int w, const int h, bool use_v2 = false)
 {
-  std::cout << "*** OpenCL kernel that utilizes local memory ***" << std::endl;
+  std::cout << "*** OpenCL kernel that utilizes local memory " << ((use_v2) ? "second version ***" : "***") << std::endl;
 
   // Vytvorenie kontextu
   QCLContext ctx;
@@ -217,19 +146,25 @@ static bool corrOCLLocalMem(const float *in, const float *mask, float *out, cons
 
   // Vypocet optimalnej local a global work_size
   int warp_size = 32; //64;
-  int block_width  = warp_size;
-  int block_height = ctx.defaultDevice().maximumWorkItemsPerGroup() / warp_size;
-  int grid_width  = ((w % warp_size) == 0) ? (w / warp_size) : (w / warp_size) + 1;
-  int grid_height = ((h % warp_size) == 0) ? (h / warp_size) : (h / warp_size) + 1;
+      // nastavenie workgroup-y (cize local work size)
+  int block_width  = warp_size;                                                             // sirka work-groupy = local width/local_size(0)
+  int block_height = ctx.defaultDevice().maximumWorkItemsPerGroup() / warp_size;            // vyska work-groupy = local height/local_size(1)
+      // nastavenie tilu (bloku po ktorom sa budu spracovavat data)
+  int tile_width = warp_size;
+  int tile_height = use_v2 ? block_height : warp_size;
+      // nastavenie gridu (pocet tilov na vysku a sirku)
+  int grid_width  = ((w % tile_width) == 0) ? (w / tile_width) : (w / tile_width) + 1;      // pocet tilov na sirku
+  int grid_height = ((h % tile_height) == 0) ? (h / tile_height) : (h / tile_height) + 1;   // pocet tilov na vysku
 
   // Alokacia pamate
-  int in_w  = grid_width  * warp_size + 2;
-  int in_h  = grid_height * warp_size + 2;
-  int out_w = grid_width  * warp_size;
-  int out_h = grid_height * warp_size;
+  int in_w  = grid_width  * tile_width + 2;
+  int in_h  = grid_height * tile_height + 2;
+  int out_w = grid_width  * tile_width;
+  int out_h = grid_height * tile_height;
 
   std::cerr << "grid_width=" << grid_width << ", grid_height=" << grid_height
             << ", block_width=" << block_width << ", block_height=" << block_height
+            << ", tile_width=" << tile_width << ", tile_height=" << tile_height
             << ", in_w=" << in_w << ", in_h=" << in_h
             << ", out_w=" << out_w << ", out_h=" << out_h
             << std::endl;
@@ -255,7 +190,7 @@ static bool corrOCLLocalMem(const float *in, const float *mask, float *out, cons
   QString opts("-DTILE_W=%1 -DTILE_H=%2 -DWG_W=%3 -DWG_H=%4");
   //QString opts("-DSTR=\\\"test\\\"");
 
-  QCLProgram program = ctx.buildProgramFromSourceFile(":/corr_local_mem.cl",
+  QCLProgram program = ctx.buildProgramFromSourceFile(use_v2 ? ":/corr_local_mem_v2.cl" : ":/corr_local_mem.cl",
                                                       opts.arg(warp_size).arg(warp_size)
                                                           .arg(warp_size).arg(block_height));
   if (program.isNull()) OCL_REPORT("Failed to compile program");
@@ -293,9 +228,26 @@ static bool corrOCLLocalMem(const float *in, const float *mask, float *out, cons
 }
 
 
-/**************************************** MAIN ****************************************/
+/**************************************** SPUSTANIE TESTOV ****************************************/
 
-int main(void)
+typedef bool (* TCorrFunc)(const float *in, const float *mask, float *out, const int w, const int h, bool use_v2);
+
+static bool testFunc(TCorrFunc f, const float *ref, const float *in, const float *mask, float *out, const int w, const int h, bool use_v2)
+{
+  if (!f(in, mask, out, w, h, use_v2)) return false;
+
+#ifdef DEBUG
+  std::cout << "C++:" << std::endl;    printArray2d(ref, w, h); std::cout << std::endl;
+  std::cout << "OpenCL:" << std::endl; printArray2d(out, w, h); std::cout << std::endl;
+#endif
+
+  std::cout << "Average difference between elements of arrays: " << cmpArray2d(ref, out, w * h) << std::endl;
+
+  return true;
+}
+
+
+static bool runTestDebug(void)
 {
   // Vygenerovanie testovacich dat
   const int mask_w = 3;
@@ -305,39 +257,110 @@ int main(void)
     1, 1, 1
   };
 
-  int w, h;
+  int w = 40, h = 40;
   const float *in;
   float *out_cpp, *out_ocl;
 
-#ifdef SMALL
-  genInputSmall(in, out_cpp, out_ocl, w, h);
+  input::genSequential(in, out_cpp, out_ocl, w, h, mask_w / 2);
+  std::cout << "Input:" << std::endl;    printArray2d(in, w + 2, h + 2); std::cout << std::endl;
+  if (!corrReference(in, mask, out_cpp, w, h)) return false;
+  if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, w, h, true)) return false;
+
+  delete [] in;
+  delete [] out_cpp;
+  delete [] out_ocl;
+
+  return true;
+}
+
+static bool runTest1(void)
+{
+  // Vygenerovanie testovacich dat
+  const int mask_w = 3;
+  const float mask[mask_w * mask_w] = {
+    1, 1, 1,
+    1, 1, 1,
+    1, 1, 1
+  };
+
+  int w = 10000, h = 10000;
+  const float *in;
+  float *out_cpp, *out_ocl;
+
+#ifdef DEBUG
+  input::genDebug(in, out_cpp, out_ocl, w, h);
 #else
-  genInputBig(in, out_cpp, out_ocl, w, h, mask_w / 2);
+  input::genSequential(in, out_cpp, out_ocl, w, h, mask_w / 2);
 #endif
 
-  std::cerr << "Test size: w=" << w << ", h=" << h << std::endl;
+  std::cout << "Test size: w=" << w << ", h=" << h << std::endl;
 
   // vypocet referencnej implementacie
-  if (!corrReference(in, mask, out_cpp, w, h)) return 1;
+  if (!corrReference(in, mask, out_cpp, w, h)) return false;
 
   // OpenCL implementacia
-  if (!corrOCLGlobalMem(in, mask, out_ocl, w, h)) return 1;
+  if (!testFunc(corrOCLGlobalMem, out_cpp, in, mask, out_ocl, w, h, false)) return false;
+  if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, w, h, false)) return false;
+  if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, w, h, true)) return false;
 
-#ifdef SMALL
-  std::cout << "C++:" << std::endl;    printArray2d(out_cpp, w, h); std::cout << std::endl;
-  std::cout << "OpenCL:" << std::endl; printArray2d(out_ocl, w, h); std::cout << std::endl;
-#endif
+  delete [] in;
+  delete [] out_cpp;
+  delete [] out_ocl;
 
-  std::cout << "Average difference between elements of arrays: " << cmpArray2d(out_cpp, out_ocl, w * h) << std::endl;
+  return true;
+}
 
-  if (!corrOCLLocalMem(in, mask, out_ocl, w, h)) return 1;
 
-#ifdef SMALL
-  std::cout << "C++:" << std::endl;    printArray2d(out_cpp, w, h); std::cout << std::endl;
-  std::cout << "OpenCL:" << std::endl; printArray2d(out_ocl, w, h); std::cout << std::endl;
-#endif
+static bool runTest2(void)
+{
+  // Vygenerovanie testovacich dat
+  const int mask_w = 3;
+  const float mask[mask_w * mask_w] = {
+    1, 1, 1,
+    1, 1, 1,
+    1, 1, 1
+  };
 
-  std::cout << "Average difference between elements of arrays: " << cmpArray2d(out_cpp, out_ocl, w * h) << std::endl;
+  const int n = 3;
+  int tests_w[n] = { 1000, 4000, 8000  };
+  int tests_h[n] = { 1000, 2000, 10000 };
+
+  for (int i = 0; i < n; ++i)
+  {
+    const float *in;
+    float *out_cpp, *out_ocl;
+
+    input::genRandom(in, out_cpp, out_ocl, tests_w[i], tests_h[i], mask_w / 2);
+
+    std::cout << "==========================================================================" << std::endl;
+    std::cout << "Test size: w=" << tests_w[i] << ", h=" << tests_h[i] << std::endl;
+
+    // vypocet referencnej implementacie
+    auto start = std::chrono::steady_clock::now();
+    if (!corrReference(in, mask, out_cpp, tests_w[i], tests_h[i])) return false;
+    auto end = std::chrono::steady_clock::now();
+    std::cout << "Reference implementation total CPU time: " << std::chrono::duration <double, std::milli>(end - start).count() << " ms" << std::endl;
+
+    // OpenCL implementacia
+    if (!testFunc(corrOCLGlobalMem, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], false)) return false;
+    if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], false)) return false;
+    if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], true)) return false;
+
+    delete [] in;
+    delete [] out_cpp;
+    delete [] out_ocl;
+  }
+
+  return true;
+}
+
+/**************************************** MAIN ****************************************/
+
+int main(void)
+{
+  if (!runTest1()) return 1;
+  //if (!runTest2()) return 1;
+  //if (!runTestDebug()) return 1;
 
   return 0;
 }
