@@ -4,6 +4,13 @@
         <file>corr_local_mem.cl</file>
         <file>corr_local_mem_v2.cl</file>
         <file>corr_local_mem_padding.cl</file>
-        <file>corr_local_mem_v2_padding.cl</file>
+        <file>corr_local_mem_padding_v2.cl</file>
+        <file>corr_local_mem_right_border.cl</file>
+        <file>corr_local_mem_right_border_2.cl</file>
+        <file>corr_local_mem_corners.cl</file>
+        <file>corr_local_mem_rows_joint.cl</file>
+        <file>corr_local_mem_float4.cl</file>
+        <file>corr_image.cl</file>
+        <file>corr_image_v2.cl</file>
     </qresource>
 </RCC>

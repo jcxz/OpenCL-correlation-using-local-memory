@@ -68,9 +68,10 @@ void genSequential(const float * & in, float * & out_cpp, float * & out_ocl, int
     for (int i = 0; i < w_size_; ++i)
     {
       int idx = i + j * w_size_;
-      if ((i < border_size) || (i > (w_size_ - 1 - border_size)) || (j < border_size) || (j > (h_size_ - 1 - border_size)))
+      if ((i < border_size) || (i > (w_size_ - 1 - border_size)) ||
+          (j < border_size) || (j > (h_size_ - 1 - border_size)))
       {
-        in_[idx] = 0;
+        in_[idx] = 0.0f;
       }
       else
       {
@@ -85,18 +86,33 @@ void genSequential(const float * & in, float * & out_cpp, float * & out_ocl, int
 }
 
 
-void genRandom(const float * & in, float * & out_cpp, float * & out_ocl, int w, int h, int border_size)
+void genRandom(const float * & in, float * & out_cpp, float * & out_ocl, int w, int h, int border_size, bool fill_border)
 {
-  int n = (w + 2 * border_size) * (h + 2 * border_size);
+  const int w_size = (w + 2 * border_size);
+  const int h_size = (h + 2 * border_size);
+  const int n      = w_size * h_size;
   float *in_ = new float[n];
   float *out_cpp_ = new float[n];
   float *out_ocl_ = new float[n];
 
   srand(time(nullptr));
 
-  for (int i = 0; i < n; ++i)
+  for (int j = 0; j < h_size; ++j)
   {
-    in_[i] = random(0.0f, 100.0f);
+    for (int i = 0; i < w_size; ++i)
+    {
+      int idx = i + j * w_size;
+      if ((!fill_border) &&
+          ((i < border_size) || (i > (w_size - 1 - border_size)) ||
+           (j < border_size) || (j > (h_size - 1 - border_size))))
+      {
+        in_[idx] = 0.0f;
+      }
+      else
+      {
+        in_[idx] = random(0.0f, 100.0f);
+      }
+    }
   }
 
   in = in_;
