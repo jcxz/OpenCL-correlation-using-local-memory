@@ -4,10 +4,15 @@
 
 
 /**********************************************
- * Every workgroup is processing data in tiles of width TILE_W and height TILE_H.
- * The tiles are organized so, that the width of the tiles is equal to the number
- * of work-items in a warp on given architecture. Processing of each tile is split
- * into several steps along the tile height.
+ * This algorithm is based on lectures from Heterogeneous Parallel Programing coursera
+ * from Coursera.
+ * It uses two types of tiles to divide the input and output data space.
+ * The input tile is larger to cover for the boundary elements and is of the same size
+ * as work group executing the kernel.
+ * The output tile is smaller by the size of the radius of convolution/correlation kernel.
+ * After all the elements are transfered from global memory to local memory the threads
+ * from the block that were used to load the boundary elements are put idle and do not take
+ * part in computation.
  */
 
 
