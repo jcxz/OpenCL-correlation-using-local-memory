@@ -231,6 +231,102 @@ static bool corrOCLLocalMem(const float *in, const float *mask, float *out, cons
 }
 
 
+static bool corrOCLLocalMemInner(const float *in, const float *mask, float *out, const int w, const int h, const char *program_name, bool use_v2 = false)
+{
+  std::cout << "*** " << program_name << ((use_v2) ? " second version ***" : " ***") << std::endl;
+
+  // Vytvorenie kontextu
+  QCLContext ctx;
+  if (!ctx.create(QCLDevice::GPU)) OCL_REPORT("Failed to create OpenCL context");
+  //if (!ctx.create(QCLDevice::CPU)) OCL_REPORT("Failed to create OpenCL context");
+
+  // Vytvorenie fronty prikazov
+  QCLCommandQueue queue(ctx.createCommandQueue(CL_QUEUE_PROFILING_ENABLE));
+  if (queue.isNull()) OCL_REPORT("Failed to enable profiling on command queue");
+  ctx.setCommandQueue(queue);
+
+  // Vypocet optimalnej local a global work_size
+  int warp_size = 32; //64;
+      // nastavenie workgroup-y (cize local work size)
+  int block_width  = warp_size;                                                             // sirka work-groupy = local width/local_size(0)
+  int block_height = ctx.defaultDevice().maximumWorkItemsPerGroup() / warp_size;            // vyska work-groupy = local height/local_size(1)
+      // nastavenie velkosti vystupneho tilu
+  int tile_width = block_width - 2; // -2 pretoze mam korelacnu masku o velkosti 3 a polomere 1
+  int tile_height = block_height - 2;
+      // nastavenie gridu (pocet tilov na vysku a sirku)
+  int grid_width  = (w - 1) / tile_width + 1;    // pocet tilov na sirku
+  int grid_height = (h - 1) / tile_height + 1;   // pocet tilov na vysku
+
+  // Alokacia pamate
+  int in_w  = grid_width  * tile_width + 2;
+  int in_h  = grid_height * tile_height + 2;
+  int out_w = grid_width  * tile_width;
+  int out_h = grid_height * tile_height;
+
+  std::cerr << "grid_width=" << grid_width << ", grid_height=" << grid_height
+            << ", block_width=" << block_width << ", block_height=" << block_height
+            << ", tile_width=" << tile_width << ", tile_height=" << tile_height
+            << ", in_w=" << in_w << ", in_h=" << in_h
+            << ", out_w=" << out_w << ", out_h=" << out_h
+            << std::endl;
+
+  QCLBuffer buf_in = ctx.createBufferDevice(sizeof(float) * in_w * in_h, QCLBuffer::ReadWrite);
+  if (buf_in.isNull()) OCL_REPORT("Failed to create input buffer");
+
+  if (!buf_in.writeRect(QRect(0, 0, (w + 2) * sizeof(float), (h + 2)),
+                        in,
+                        in_w * sizeof(float),
+                        (w + 2) * sizeof(float)))
+  {
+    OCL_REPORT("Failed to write data input buffer");
+  }
+
+  QCLBuffer buf_mask = ctx.createBufferCopy(mask, sizeof(float) * 3 * 3, QCLBuffer::ReadWrite);
+  if (buf_mask.isNull()) OCL_REPORT("Failed to create mask buffer");
+
+  QCLBuffer buf_out = ctx.createBufferDevice(sizeof(float) * out_w * out_h, QCLBuffer::ReadWrite);
+  if (buf_out.isNull()) OCL_REPORT("Failed to create output buffer");
+
+  // Skompilovanie programu a vytvorenie kernelu
+  QString opts("-DIN_TILE_W=%1 -DIN_TILE_H=%2 -DOUT_TILE_W=%3 -DOUT_TILE_H=%4");
+  QCLProgram program = ctx.buildProgramFromSourceFile(QString(":/%1%2").arg(program_name).arg(use_v2 ? "_v2.cl" : ".cl"),
+                                                      opts.arg(block_width).arg(block_height)
+                                                          .arg(tile_width).arg(tile_height));
+  if (program.isNull()) OCL_REPORT("Failed to compile program");
+
+  QCLKernel kernel = program.createKernel("corr");
+  if (kernel.isNull()) OCL_REPORT("Failed to create kernel");
+
+  // Nastavenie parametrov kernelu
+  kernel.setArg(0, buf_in);
+  kernel.setArg(1, buf_mask);
+  kernel.setArg(2, buf_out);
+  kernel.setArg(3, in_w);
+  kernel.setArg(4, out_w);
+
+  // Nastavenie work size-ov
+  kernel.setLocalWorkSize(block_width, block_height);
+  kernel.setGlobalWorkSize(grid_width * block_width, grid_height * block_height);
+
+  // Spustenie kernelu
+  QCLEvent ev(kernel.run());
+  ev.waitForFinished();
+
+  std::cout << "Execution time of kernel: " << ((ev.finishTime() - ev.runTime()) * 1e-6) << " ms" << std::endl;
+
+  // Nacitanie vysledku
+  if (!buf_out.readRect(QRect(0, 0, w * sizeof(float), h),
+                        out,
+                        sizeof(float) * out_w,
+                        sizeof(float) * w))
+  {
+    OCL_REPORT("Failed to read output");
+  }
+
+  return true;
+}
+
+
 static bool corrOCLLocalMemPadding(const float *in, const float *mask, float *out, const int w, const int h, const char *program_name, bool use_v2 = false)
 {
   //std::cout << "*** OpenCL kernel that utilizes local memory and aligns global data " << ((use_v2) ? "second version ***" : "***") << std::endl;
@@ -488,7 +584,8 @@ static bool runTestDebug(void)
   //if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, w, h, true)) return false;
   //if (!testFunc(corrOCLLocalMemPadding, out_cpp, in, mask, out_ocl, w, h, false)) return false;
   //if (!testFunc(corrOCLLocalMemPadding, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_padding", true)) return false;
-  if (!testFunc(corrOCLImage, out_cpp, in, mask, out_ocl, w, h, "corr_image", false)) return false;
+  //if (!testFunc(corrOCLImage, out_cpp, in, mask, out_ocl, w, h, "corr_image", false)) return false;
+  if (!testFunc(corrOCLLocalMemInner, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_inner_tile", false)) return false;
 
   delete [] in;
   delete [] out_cpp;
@@ -536,6 +633,7 @@ static bool runTest1(void)
   if (!testFunc(corrOCLLocalMemPadding, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_padding", true)) return false;
   if (!testFunc(corrOCLImage, out_cpp, in, mask, out_ocl, w, h, "corr_image", false)) return false;
   if (!testFunc(corrOCLImage, out_cpp, in, mask, out_ocl, w, h, "corr_image", true)) return false;
+  if (!testFunc(corrOCLLocalMemInner, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_inner_tile", false)) return false;
 
   delete [] in;
   delete [] out_cpp;
@@ -589,6 +687,7 @@ static bool runTest2(void)
     if (!testFunc(corrOCLLocalMemPadding, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_local_mem_padding", true)) return false;
     if (!testFunc(corrOCLImage, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_image", false)) return false;
     if (!testFunc(corrOCLImage, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_image", true)) return false;
+    if (!testFunc(corrOCLLocalMemInner, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_local_mem_inner_tile", false)) return false;
 
     delete [] in;
     delete [] out_cpp;
