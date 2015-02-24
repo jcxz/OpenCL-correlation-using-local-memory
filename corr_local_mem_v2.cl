@@ -25,7 +25,8 @@ __kernel void corr(__global   const float *in,
                    const int in_row_pitch,
                    const int out_row_pitch)
 {
-  __local float cache[TILE_W + 2][WG_H + 2];
+  //__local float cache[TILE_W + 2][WG_H + 2];
+  __local float cache[WG_H + 2][TILE_W + 2];
 
   int gi_0 = get_group_id(0) * TILE_W;
   int gj_0 = get_group_id(1) * WG_H;
@@ -35,51 +36,60 @@ __kernel void corr(__global   const float *in,
   int lid = li + lj * WG_W;
 
   // nacitanie prostriedku z globalnej do lokalnej pamate
-  cache[li + 1][lj + 1] = in[(gi_0 + li + 1) + (gj_0 + lj + 1) * in_row_pitch];
+  //cache[li + 1][lj + 1] = in[(gi_0 + li + 1) + (gj_0 + lj + 1) * in_row_pitch];
+  cache[lj + 1][li + 1] = in[(gi_0 + li + 1) + (gj_0 + lj + 1) * in_row_pitch];
 
   // nacitanie horneho okraju
   if (lid < WG_W)
   {
-    cache[li + 1][0] = in[(gi_0 + li + 1) + gj_0 * in_row_pitch];
+    //cache[li + 1][0] = in[(gi_0 + li + 1) + gj_0 * in_row_pitch];
+    cache[0][li + 1] = in[(gi_0 + li + 1) + gj_0 * in_row_pitch];
   }
 
   // nacitanie dolneho okraju
   if ((lid >= WG_W) && (lid < (WG_W * 2)))
   {
-    cache[li + 1][WG_H + 1] = in[(gi_0 + li + 1) + (gj_0 + WG_H + 1) * in_row_pitch];
+    //cache[li + 1][WG_H + 1] = in[(gi_0 + li + 1) + (gj_0 + WG_H + 1) * in_row_pitch];
+    cache[WG_H + 1][li + 1] = in[(gi_0 + li + 1) + (gj_0 + WG_H + 1) * in_row_pitch];
   }
 
   // nacitanie laveho okraju
   if ((lid >= (WG_W * 2)) && (lid < (WG_W * 2 + WG_H)))
   {
-    cache[0][li + 1] = in[gi_0 + (gj_0 + li + 1) * in_row_pitch];
+    //cache[0][li + 1] = in[gi_0 + (gj_0 + li + 1) * in_row_pitch];
+    cache[li + 1][0] = in[gi_0 + (gj_0 + li + 1) * in_row_pitch];
   }
 
   // nacitanie praveho okraju
   if ((lid >= (WG_W * 3)) && (lid < (WG_W * 3 + WG_H)))
   {
-    cache[TILE_W + 1][li + 1] = in[(gi_0 + TILE_W + 1) + (gj_0 + li + 1) * in_row_pitch];
+    //cache[TILE_W + 1][li + 1] = in[(gi_0 + TILE_W + 1) + (gj_0 + li + 1) * in_row_pitch];
+    cache[li + 1][TILE_W + 1] = in[(gi_0 + TILE_W + 1) + (gj_0 + li + 1) * in_row_pitch];
   }
 
   // nacitanie rohov
   if (lid < WG_W)
   {
+    //cache[0][0] = in[gi_0 + gj_0 * in_row_pitch];
     cache[0][0] = in[gi_0 + gj_0 * in_row_pitch];
   }
 
   if ((lid >= WG_W) && (lid < (WG_W * 2)))
   {
-    cache[0][WG_H + 1] = in[gi_0 + (gj_0 + WG_H + 1) * in_row_pitch];
+    //cache[0][WG_H + 1] = in[gi_0 + (gj_0 + WG_H + 1) * in_row_pitch];
+    cache[WG_H + 1][0] = in[gi_0 + (gj_0 + WG_H + 1) * in_row_pitch];
   }
 
   if ((lid >= (WG_W * 2)) && (lid < (WG_W * 3)))
   {
-    cache[TILE_W + 1][0] = in[(gi_0 + TILE_W + 1) + gj_0 * in_row_pitch];
+    //cache[TILE_W + 1][0] = in[(gi_0 + TILE_W + 1) + gj_0 * in_row_pitch];
+    cache[0][TILE_W + 1] = in[(gi_0 + TILE_W + 1) + gj_0 * in_row_pitch];
   }
 
   if ((lid >= (WG_W * 3)) && (lid < (WG_W * 4)))
   {
-    cache[TILE_W + 1][WG_H + 1] = in[(gi_0 + TILE_W + 1) + (gj_0 + WG_H + 1) * in_row_pitch];
+    //cache[TILE_W + 1][WG_H + 1] = in[(gi_0 + TILE_W + 1) + (gj_0 + WG_H + 1) * in_row_pitch];
+    cache[WG_H + 1][TILE_W + 1] = in[(gi_0 + TILE_W + 1) + (gj_0 + WG_H + 1) * in_row_pitch];
   }
 
   barrier(CLK_LOCAL_MEM_FENCE);
@@ -92,7 +102,8 @@ __kernel void corr(__global   const float *in,
   {
     for (int i = -1; i <= 1; ++i)
     {
-      sum += cache[li + 1 + i][lj + 1 + j] * mask[IDX(i + 1, j + 1, 3)];
+      //sum += cache[li + 1 + i][lj + 1 + j] * mask[IDX(i + 1, j + 1, 3)];
+      sum += cache[lj + 1 + j][li + 1 + i] * mask[IDX(i + 1, j + 1, 3)];
     }
   }
 
