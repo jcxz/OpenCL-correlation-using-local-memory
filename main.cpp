@@ -531,6 +531,7 @@ static bool runTest1(void)
   if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_right_border_2", false)) return false;
   if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_rows_joint", false)) return false;
   //if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_float4", false)) return false;
+  if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_indexing", false)) return false;
   if (!testFunc(corrOCLLocalMemPadding, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_padding", false)) return false;
   if (!testFunc(corrOCLLocalMemPadding, out_cpp, in, mask, out_ocl, w, h, "corr_local_mem_padding", true)) return false;
   if (!testFunc(corrOCLImage, out_cpp, in, mask, out_ocl, w, h, "corr_image", false)) return false;
@@ -583,6 +584,7 @@ static bool runTest2(void)
     if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_local_mem_right_border_2", false)) return false;
     if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_local_mem_rows_joint", false)) return false;
     //if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_local_mem_float4", false)) return false;
+    if (!testFunc(corrOCLLocalMem, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_local_mem_indexing", false)) return false;
     if (!testFunc(corrOCLLocalMemPadding, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_local_mem_padding", false)) return false;
     if (!testFunc(corrOCLLocalMemPadding, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_local_mem_padding", true)) return false;
     if (!testFunc(corrOCLImage, out_cpp, in, mask, out_ocl, tests_w[i], tests_h[i], "corr_image", false)) return false;

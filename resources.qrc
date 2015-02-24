@@ -12,5 +12,6 @@
         <file>corr_local_mem_float4.cl</file>
         <file>corr_image.cl</file>
         <file>corr_image_v2.cl</file>
+        <file>corr_local_mem_indexing.cl</file>
     </qresource>
 </RCC>
